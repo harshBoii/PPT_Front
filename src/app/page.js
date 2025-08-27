@@ -1,13 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useRef } from "react";
 import axios from "axios";
-import { useDropzone } from "react-dropzone";
-import { FileText, X, Loader2, Download, FileSliders } from "lucide-react";
-import { Button } from "./components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
-import { Textarea } from "./components/ui/textarea";
+import { FileText, X, Loader2, Download, FileSliders, Upload } from "lucide-react";
 
 export default function HomePage() {
   const [textInput, setTextInput] = useState("");
@@ -18,35 +13,26 @@ export default function HomePage() {
   const [error, setError] = useState(null);
   const [downloadUrl, setDownloadUrl] = useState(null);
 
-  const onDropText = useCallback((acceptedFiles) => {
-    if (acceptedFiles.length > 0) {
-      setTextFile(acceptedFiles[0]);
-      setTextInput("");
+  // Refs to programmatically click the hidden file inputs
+  const textFileRef = useRef(null);
+  const templateFileRef = useRef(null);
+
+  const handleFileChange = (e, fileType) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (fileType === 'text') {
+      setTextFile(file);
+      setTextInput(""); // Clear textarea if a file is chosen
       setError(null);
+    } else if (fileType === 'template') {
+      setTemplateFile(file);
     }
-  }, []);
-
-  const onDropTemplate = useCallback((acceptedFiles) => {
-    if (acceptedFiles.length > 0) {
-      setTemplateFile(acceptedFiles[0]);
-    }
-  }, []);
-
-  const { getRootProps: getTextRootProps, getInputProps: getTextInputProps } = useDropzone({
-    onDrop: onDropText,
-    accept: { "text/plain": [".txt"] },
-    multiple: false,
-  });
-
-  const { getRootProps: getTemplateRootProps, getInputProps: getTemplateInputProps } = useDropzone({
-    onDrop: onDropTemplate,
-    accept: { "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"] },
-    multiple: false,
-  });
+  };
 
   const handleGenerateClick = async () => {
     if (!textFile && !textInput) {
-      setError("Please provide source text by typing or uploading a .txt file.");
+      setError("Please provide the source content for the presentation.");
       return;
     }
 
@@ -55,14 +41,12 @@ export default function HomePage() {
     setDownloadUrl(null);
 
     const formData = new FormData();
-
     if (textFile) {
       formData.append("text_file", textFile);
     } else {
       const textBlob = new Blob([textInput], { type: "text/plain" });
       formData.append("text_file", textBlob, "input.txt");
     }
-    
     if (templateFile) {
       formData.append("template_file", templateFile);
     }
@@ -73,93 +57,118 @@ export default function HomePage() {
         formData,
         { responseType: "blob" }
       );
-
       const url = window.URL.createObjectURL(new Blob([response.data]));
       setDownloadUrl(url);
     } catch (err) {
       console.error("Generation failed:", err);
-      setError("Failed to generate presentation. Check the backend server and try again.");
+      setError("Failed to generate presentation. Please check the backend server and try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
   const removeFile = (type) => {
-    if (type === 'text') setTextFile(null);
-    if (type === 'template') setTemplateFile(null);
+    if (type === 'text') {
+      setTextFile(null);
+      if (textFileRef.current) textFileRef.current.value = "";
+    }
+    if (type === 'template') {
+      setTemplateFile(null);
+      if (templateFileRef.current) templateFileRef.current.value = "";
+    }
   };
 
-  const renderFileChip = (file, onRemove, icon) => (
-    <div className="flex items-center justify-between p-2 mt-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-      <div className="flex items-center space-x-2">
+  // Self-contained component for displaying a selected file
+  const FileChip = ({ file, onRemove, icon }) => (
+    <div className="flex items-center justify-between p-2 mt-2 bg-slate-700/50 border border-slate-600 rounded-lg animate-fade-in">
+      <div className="flex items-center space-x-3">
         {icon}
-        <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{file.name}</span>
+        <span className="text-sm font-medium text-slate-300">{file.name}</span>
       </div>
-      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onRemove}>
+      <button onClick={onRemove} className="p-1 rounded-full text-slate-400 hover:bg-slate-700 hover:text-white transition-colors">
         <X className="w-4 h-4" />
-      </Button>
+      </button>
     </div>
   );
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gray-50 dark:bg-gray-900">
+<main>
+    <div className="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4 font-sans">
       <div className="w-full max-w-2xl">
-        <Card className="shadow-lg">
-          <CardHeader className="text-center">
-            <CardTitle className="text-3xl font-bold">AI Presentation Generator</CardTitle>
-            <CardDescription>Provide source text and an optional template to create a professional presentation.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Source Content</label>
-              <Textarea
-                placeholder="Type or paste your presentation content here..."
-                rows={8}
-                value={textInput}
-                onChange={(e) => {
-                  setTextInput(e.target.value);
-                  setTextFile(null);
-                }}
-                className="mb-2"
-              />
-              <div
-                {...getTextRootProps()}
-                className="flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-lg cursor-pointer text-sm text-gray-500 hover:border-gray-400"
-              >
-                <input {...getTextInputProps()} />
-                <p>...or drag & drop a .txt file here.</p>
-              </div>
-              {textFile && renderFileChip(textFile, () => removeFile('text'), <FileText className="w-5 h-5 text-blue-500" />)}
+        <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl shadow-2xl shadow-black/20 p-8 space-y-8">
+          
+          <div className="text-center">
+            <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-cyan-300 text-transparent bg-clip-text">
+              AI Presentation Generator
+            </h1>
+            <p className="mt-2 text-slate-400">Transform your notes into polished presentations instantly.</p>
+          </div>
+          
+          {/* Source Content Section */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-slate-300">1. Provide Source Content</label>
+            <textarea
+              placeholder="Type or paste your content here..."
+              rows={8}
+              value={textInput}
+              onChange={(e) => {
+                setTextInput(e.target.value);
+                removeFile('text');
+              }}
+              className="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+            />
+            <input type="file" ref={textFileRef} onChange={(e) => handleFileChange(e, 'text')} accept=".txt" className="hidden" />
+            <button 
+              onClick={() => textFileRef.current.click()} 
+              className="w-full flex items-center justify-center p-3 text-sm font-semibold rounded-lg bg-slate-700/50 border border-slate-600 hover:bg-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <Upload className="w-4 h-4 mr-2"/>
+              ...or Upload a .txt File
+            </button>
+            {textFile && <FileChip file={textFile} onRemove={() => removeFile('text')} icon={<FileText className="w-5 h-5 text-blue-400" />} />}
+          </div>
+
+          {/* Template Section */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-slate-300">2. Upload a Template (Optional)</label>
+            <input type="file" ref={templateFileRef} onChange={(e) => handleFileChange(e, 'template')} accept=".pptx" className="hidden" />
+            <button 
+              onClick={() => templateFileRef.current.click()} 
+              className="w-full flex items-center justify-center p-3 text-sm font-semibold rounded-lg bg-slate-700/50 border border-slate-600 hover:bg-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <FileSliders className="w-4 h-4 mr-2"/>
+              Upload a .pptx Template
+            </button>
+            {templateFile && <FileChip file={templateFile} onRemove={() => removeFile('template')} icon={<FileSliders className="w-5 h-5 text-green-400" />} />}
+          </div>
+
+          {/* Error & Action Buttons */}
+          {error && (
+            <div className="p-4 bg-red-900/50 border border-red-500/50 text-red-300 rounded-lg text-sm">
+              <p className="font-bold">Generation Failed</p>
+              <p>{error}</p>
             </div>
+          )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Presentation Template (Optional)</label>
-              <div
-                {...getTemplateRootProps()}
-                className="flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-lg cursor-pointer text-sm text-gray-500 hover:border-gray-400"
-              >
-                <input {...getTemplateInputProps()} />
-                <p>Drag & drop a .pptx template here.</p>
-              </div>
-              {templateFile && renderFileChip(templateFile, () => removeFile('template'), <FileSliders className="w-5 h-5 text-green-500" />)}
-            </div>
-
-            {error && <Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
-
-            <Button onClick={handleGenerateClick} disabled={(!textFile && !textInput) || isLoading} className="w-full font-semibold" size="lg">
-              {isLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Generating...</> : "Generate Presentation"}
-            </Button>
+          <div className="pt-4 border-t border-slate-700/50">
+            <button 
+              onClick={handleGenerateClick} 
+              disabled={(!textFile && !textInput) || isLoading} 
+              className="w-full flex items-center justify-center px-4 py-3 text-base font-bold rounded-lg bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Generating...</> : "✨ Generate Presentation"}
+            </button>
 
             {downloadUrl && (
-              <a href={downloadUrl} download="presentation.pptx">
-                <Button variant="outline" className="w-full font-semibold" size="lg">
-                  <Download className="mr-2 h-5 w-5" /> Download Presentation
-                </Button>
+              <a href={downloadUrl} download="presentation.pptx" className="mt-4 block">
+                <button className="w-full flex items-center justify-center px-4 py-3 text-base font-bold rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors focus:outline-none focus:ring-2 focus:ring-green-400">
+                  <Download className="mr-2 h-5 w-5" /> Download Your Presentation
+                </button>
               </a>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+      </div>            
       </div>
     </main>
   );
